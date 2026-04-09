@@ -1,23 +1,30 @@
 
 
 
-ATTACH '/home/sai/Study/thesis/database/tpch_SF_1.duckdb' AS ddb;
+ATTACH '/home/sai/Study/thesis/database/tpch_SF_1.duckdb' AS ddb; 
 
-ATTACH '/home/sai/Study/thesis/database/tpch_SF_10.duckdb' AS ddb;
-
+ATTACH '/home/sai/Study/thesis/database/tpch_SF_10.duckdb' AS ddb; 
 
 ATTACH '/home/sai/Study/thesis/database/tpch_SF_100.duckdb' AS ddb;
 
-
-USE ddb;  
+SET temp_directory = '/home/sai/tmp/duckdb_tmp';
 
 
 
 show all tables
 
 
+SET explain_output = 'optimized_only';
 
--------- wide joins
+
+USE ddb;  
+
+
+
+
+
+
+-------- wide joins  = TPC-H Q8
 EXPLAIN ANALYZE
 select
 	o_year,
@@ -61,7 +68,8 @@ order by
 
 
 
--- distinct counts
+
+-- distinct counts = TPC-H Q16
 EXPLAIN ANALYZE
 select
 	p_brand,
@@ -105,7 +113,7 @@ order by
 
 
 
---- TOP-N query 
+--- TOP-N query = TPC-H Q18
 EXPLAIN ANALYZE
 select
 	c_name,
@@ -149,6 +157,7 @@ limit 100;
 
 
 -- sessionization ---> our own creation for this dataset as TPC-H does not have one by default
+-- unoptimized sessionization
 
 EXPLAIN ANALYZE
 WITH customer_day_session AS (
@@ -172,3 +181,37 @@ SELECT
 FROM customer_day_session
 WHERE has_fulfilled_order = 0;
 
+
+
+
+
+
+
+
+-- optimized sessionization
+
+EXPLAIN ANALYZE
+SELECT
+    AVG(pages_visited_proxy) AS avg_pages_visited_proxy,
+    AVG(products_seen)       AS avg_distinct_products_proxy
+FROM (
+    SELECT
+        o.o_custkey,
+        o.o_orderdate,
+        COUNT(*)                 AS pages_visited_proxy,
+        COUNT(DISTINCT l.l_partkey) AS products_seen
+    FROM orders o
+    ANTI JOIN (
+        SELECT DISTINCT
+            o_custkey,
+            o_orderdate
+        FROM orders
+        WHERE o_orderstatus = 'F'
+    ) bad_sessions
+    USING (o_custkey, o_orderdate)
+    JOIN lineitem l
+      ON l.l_orderkey = o.o_orderkey
+    GROUP BY
+        o.o_custkey,
+        o.o_orderdate
+) s;
